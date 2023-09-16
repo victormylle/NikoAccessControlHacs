@@ -1,10 +1,12 @@
 from homeassistant.components.switch import SwitchEntity
 
-import requests
+import aiohttp
+import asyncio
+import async_timeout
 import hashlib
 import json
 
-def get_session_id(username: str, password: str):
+async def async_get_session_id(username: str, password: str):
     login_url = "https://apiieu.guardingvision.com/api/user/login"
 
     login_form = {
@@ -14,10 +16,13 @@ def get_session_id(username: str, password: str):
         "clientType": "178",
     }
 
-    response = requests.post(login_url, params=login_form)
-    return response.json()["loginResp"]["sessionId"]
+    async with aiohttp.ClientSession() as session:
+        with async_timeout.timeout(10):
+            async with session.post(login_url, params=login_form) as response:
+                data = await response.json()
+                return data["loginResp"]["sessionId"]
 
-def get_locks(session_id: str):
+async def async_get_locks(session_id: str):
     data = {
         'cmdId': '19713',
         'sessionId': session_id,
@@ -25,31 +30,37 @@ def get_locks(session_id: str):
         'transmissionData': 'GET /ISAPI/Custom/VideoIntercom/locksParams?format=json\r\n',
     }
 
-    response = requests.post('https://apiieu.guardingvision.com/api/device/isapi', data=data)
-    
-    # check if resultCode is 0
-    if response.json()['resultCode'] != '0':
-        raise Exception('Error while getting locks')
-    
-    lock_summary = [(lock['lockId'], lock['lockName']) for lock in json.loads(response.json()["data"]) if lock["enable"]]
-    return lock_summary
+    async with aiohttp.ClientSession() as session:
+        with async_timeout.timeout(10):
+            async with session.post('https://apiieu.guardingvision.com/api/device/isapi', data=data) as response:
+                resp_json = await response.json()
+                if resp_json['resultCode'] != '0':
+                    raise Exception('Error while getting locks')
 
-def lock_action(session_id: str, lock_id: int):
+                lock_summary = [(lock['lockId'], lock['lockName']) for lock in json.loads(resp_json["data"]) if lock["enable"]]
+                return lock_summary
+
+async def async_lock_action(session_id: str, lock_id: int):
     data = {
         'cmdId': '19713',
         'sessionId': session_id,
         'subSerial': 'L15446055',
-        'transmissionData': 'PUT /ISAPI/Custom/VideoIntercom/unlock?format=json\r\n{\n  "lockId" : ' + str(lock_id) + '\n}',
+        'transmissionData': f'PUT /ISAPI/Custom/VideoIntercom/unlock?format=json\r\n{{\n  "lockId" : {lock_id}\n}}',
     }
 
-    response = requests.post('https://apiieu.guardingvision.com/api/device/isapi', data=data)
+    async with aiohttp.ClientSession() as session:
+        with async_timeout.timeout(10):
+            async with session.post('https://apiieu.guardingvision.com/api/device/isapi', data=data) as response:
+                # Here you can add more error handling based on the response if you want
+                return await response.json()
+            
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     email = config_entry.data["email"]
     password = config_entry.data["password"]
 
-    session_id = get_session_id(email, password)
-    locks = get_locks(session_id)
+    session_id = await async_get_session_id(email, password)
+    locks = await async_get_locks(session_id)
 
     async_add_entities([GuardingVisionSwitch(session_id, lock) for lock in locks], True)
 
@@ -74,8 +85,8 @@ class GuardingVisionSwitch(SwitchEntity):
     def assumed_state(self):
         return True  # Indicate that the state is assumed, not definite
 
-    def turn_on(self, **kwargs):
-        lock_action(self._session_id, self._lock[0])
+    async def async_turn_on(self, **kwargs):
+        await async_lock_action(self._session_id, self._lock[0])
 
-    def turn_off(self, **kwargs):
-        lock_action(self._session_id, self._lock[0])
+    async def async_turn_off(self, **kwargs):
+        await async_lock_action(self._session_id, self._lock[0])
