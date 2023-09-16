@@ -1,0 +1,10 @@
+{
+    "domain": "niko_access_control",
+    "name": "Niko Access Control",
+    "config_flow": true,
+    "documentation": "",
+    "requirements": [],
+    "codeowners": ["@VictorMylle"],
+    "dependencies": []
+  }
+  
