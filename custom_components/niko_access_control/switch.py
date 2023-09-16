@@ -1,5 +1,5 @@
 from homeassistant.components.switch import SwitchEntity
-from lock_methods import get_locks, lock_action, get_session_id  # import these methods from your existing code
+from .lock_methods import get_locks, lock_action, get_session_id  # import these methods from your existing code
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     email = config_entry.data["email"]
