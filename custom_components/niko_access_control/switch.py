@@ -62,12 +62,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     session_id = await async_get_session_id(email, password)
     locks = await async_get_locks(session_id)
 
-    async_add_entities([GuardingVisionSwitch(session_id, lock) for lock in locks], True)
+    entities = [GuardingVisionSwitch(session_id, lock) for lock in locks]
+    async_add_entities(entities, True)
+
+    async def refresh_session():
+        while True:
+            await asyncio.sleep(3 * 60 * 60)  # 3 hours in seconds
+            new_session_id = await async_get_session_id(email, password)
+            for entity in entities:
+                entity.update_session_id(new_session_id)
+
+    hass.loop.create_task(refresh_session())
 
 class GuardingVisionSwitch(SwitchEntity):
     def __init__(self, session_id, lock):
         self._session_id = session_id
         self._lock = lock
+
+    def update_session_id(self, new_session_id):
+        self._session_id = new_session_id
 
     @property
     def name(self):
