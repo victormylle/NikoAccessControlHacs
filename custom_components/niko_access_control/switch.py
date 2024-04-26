@@ -5,11 +5,13 @@ import asyncio
 import async_timeout
 import hashlib
 import json
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_get_session_id(username: str, password: str):
     login_url = "https://apiieu.guardingvision.com/api/user/login"
-
     login_form = {
         "account": username,
         "password": hashlib.md5(password.encode()).hexdigest(),
@@ -21,7 +23,12 @@ async def async_get_session_id(username: str, password: str):
         with async_timeout.timeout(10):
             async with session.post(login_url, params=login_form) as response:
                 data = await response.json()
-                return data["loginResp"]["sessionId"]
+                if "loginResp" in data and "sessionId" in data["loginResp"]:
+                    return data["loginResp"]["sessionId"]
+                else:
+                    # Log the error if session ID is not obtained
+                    _LOGGER.error(f"Failed to login: {data}")
+                    raise Exception("Failed to retrieve session ID")
 
 
 async def async_get_locks(session_id: str):
@@ -39,6 +46,7 @@ async def async_get_locks(session_id: str):
             ) as response:
                 resp_json = await response.json()
                 if resp_json["resultCode"] != "0":
+                    _LOGGER.error(f"Error while getting locks: {resp_json}")
                     raise Exception("Error while getting locks")
 
                 lock_summary = [
@@ -62,8 +70,10 @@ async def async_lock_action(session_id: str, lock_id: int):
             async with session.post(
                 "https://apiieu.guardingvision.com/api/device/isapi", data=data
             ) as response:
-                # Here you can add more error handling based on the response if you want
-                return await response.json()
+                result = await response.json()
+                if result.get("resultCode") != "0":
+                    _LOGGER.error(f"Error while performing lock action: {result}")
+                return result
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
